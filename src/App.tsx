@@ -1,299 +1,174 @@
-import React, { useMemo, useState, useEffect } from 'react'
+const services = [
+  {
+    title: 'Consulenza direzionale',
+    text: 'Analisi dei processi, definizione degli obiettivi e piani operativi per rendere l\'organizzazione più efficiente e misurabile.',
+  },
+  {
+    title: 'Servizi amministrativi',
+    text: 'Supporto nella gestione documentale, coordinamento delle attività d\'ufficio e ottimizzazione dei flussi amministrativi.',
+  },
+  {
+    title: 'Sviluppo commerciale',
+    text: 'Affianchiamo aziende e professionisti nella costruzione di relazioni, opportunità e strategie di crescita sostenibili.',
+  },
+  {
+    title: 'Soluzioni digitali',
+    text: 'Accompagniamo la trasformazione digitale con strumenti semplici, integrazioni operative e metodo orientato ai risultati.',
+  },
+]
 
-function toKey(y: number, m: number) { const mm = String(m).padStart(2, '0'); return y + '-' + mm; }
-function toLabel(y: number, m: number) { const ms = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic']; return ms[m-1] + '-' + String(y).slice(2); }
-function monthRange(start: {y:number;m:number}, end: {y:number;m:number}){
-  const out: {key:string; label:string; y:number; m:number}[] = [];
-  let y = start.y, m = start.m;
-  while (y < end.y || (y === end.y && m <= end.m)) { out.push({ key: toKey(y,m), label: toLabel(y,m), y, m }); m++; if (m===13){ m=1; y++; } }
-  return out;
-}
-function compareKeyISO(a:string,b:string){ return a.localeCompare(b); }
-function eur(n:number){ return new Intl.NumberFormat('it-IT', { style:'currency', currency:'EUR', minimumFractionDigits:0, maximumFractionDigits:0}).format(n); }
-function max0(n:number){ return n>0?n:0; }
+const stats = [
+  { value: '4', label: 'aree di intervento' },
+  { value: '100%', label: 'approccio su misura' },
+  { value: '1', label: 'referente dedicato' },
+]
 
-interface Row {
-  key:string; label:string;
-  revenue:number; incassi:number;
-  costiVar:number; usoMag:number; acquistiNec:number; extraMin:number;
-  pagSubito:number; pagDiffScaduti:number; diffNuovi:number;
-  fixed:number; initDebt:number; costiForn:number; uscite:number; saldo:number; cum:number;
-  magFinale:number;
-}
+const steps = [
+  'Ascoltiamo le esigenze e fotografiamo il punto di partenza.',
+  'Costruiamo una proposta chiara con priorità, tempi e responsabilità.',
+  'Implementiamo le attività concordate con aggiornamenti periodici.',
+  'Misuriamo i risultati e individuiamo nuove opportunità di miglioramento.',
+]
 
-export default function App(){
-  const months = useMemo(()=> monthRange({y:2025,m:9},{y:2026,m:12}), []);
-
-  const [initialCash, setInitialCash] = useState<number>(5000);
-  const [margin, setMargin] = useState<number>(35);
-  const costVarPct = 100 - margin;
-  const [initialInventory, setInitialInventory] = useState<number>(70000);
-  const [monthlyInventoryUse, setMonthlyInventoryUse] = useState<number>(7000);
-  const [minPurchase, setMinPurchase] = useState<number>(5000);
-  const [minPurchaseMonthsText, setMinPurchaseMonthsText] = useState<string>('Set-25, Ott-25');
-  const [termsCutoff, setTermsCutoff] = useState<string>('2025-12');
-  const [upfrontBefore, setUpfrontBefore] = useState<number>(60);
-  const [deferredBefore, setDeferredBefore] = useState<number>(40);
-  const [upfrontAfter, setUpfrontAfter] = useState<number>(10);
-  const [deferredAfter, setDeferredAfter] = useState<number>(90);
-  const [collectionLag, setCollectionLag] = useState<number>(1);
-
-  const defaultRevenue: Record<string,number> = useMemo(()=>{
-    const r: Record<string,number> = {}; months.forEach(({key})=> r[key]=120000);
-    r[toKey(2025,9)] = 20000; r[toKey(2025,10)] = 20000; return r;
-  }, [months]);
-  const [revenue, setRevenue] = useState<Record<string,number>>(defaultRevenue);
-
-  const defaultFixed: Record<string,number> = useMemo(()=>{
-    const c: Record<string,number> = {}; months.forEach(({key})=> c[key]=25000);
-    c[toKey(2025,9)] = 12000; c[toKey(2025,10)] = 12000; c[toKey(2025,11)] = 17000; c[toKey(2025,12)] = 17000; return c;
-  }, [months]);
-  const [fixedCosts, setFixedCosts] = useState<Record<string,number>>(defaultFixed);
-
-  const defaultInitDebt: Record<string,number> = useMemo(()=>{
-    const d: Record<string,number> = {}; months.forEach(({key})=> d[key]=0);
-    d[toKey(2025,9)] = 13000; d[toKey(2025,10)] = 13000; d[toKey(2025,11)] = 13000; d[toKey(2025,12)] = 13000; d[toKey(2026,1)] = 13000; return d;
-  }, [months]);
-  const [initDebt, setInitDebt] = useState<Record<string,number>>(defaultInitDebt);
-
-  const [extraReceipts, setExtraReceipts] = useState<Record<string,number>>({ [toKey(2025,9)]: 5000 });
-
-  const results = useMemo<Row[]>(()=>{
-    const receivables: Record<string,number> = {}; months.forEach(({key})=> receivables[key]=0);
-    months.forEach(({key}, idx)=>{ const t = idx + collectionLag; if (t < months.length){ receivables[months[t].key] += (revenue[key]||0); } });
-
-    const deferredDue: Record<string,number> = {}; months.forEach(({key})=> deferredDue[key]=0);
-
-    const labelToKey = (label:string)=>{ const map:Record<string,number>={Gen:1,Feb:2,Mar:3,Apr:4,Mag:5,Giu:6,Lug:7,Ago:8,Set:9,Ott:10,Nov:11,Dic:12}; const parts=label.trim().split('-'); if(parts.length!=2) return label; const m=map[parts[0] as keyof typeof map]; const y=2000+Number(parts[1]); return m? toKey(y,m):label; };
-    const minMonths = new Set(minPurchaseMonthsText.split(',').map(s=>s.trim()).filter(Boolean).map(labelToKey));
-
-    let inventory = initialInventory; let cum = initialCash;
-    const rows: Row[] = [];
-
-    months.forEach(({key,label}, idx)=>{
-      const fat = revenue[key] || 0;
-      const inc = (receivables[key]||0) + (extraReceipts[key]||0);
-
-      const costiVar = fat * (costVarPct/100);
-      const usoMag = Math.min(monthlyInventoryUse, Math.max(inventory,0));
-      inventory -= usoMag;
-
-      const acquistiNec = max0(costiVar - usoMag);
-      const minReq = minMonths.has(key) ? minPurchase : 0;
-      const extraMin = max0(minReq - acquistiNec);
-      if (extraMin > 0) inventory += extraMin;
-
-      const acquistiTot = acquistiNec + extraMin;
-
-      const regime1 = compareKeyISO(key, termsCutoff) <= 0;
-      const pctUp = (regime1? upfrontBefore: upfrontAfter)/100;
-      const pctDf = (regime1? deferredBefore: deferredAfter)/100;
-
-      const pagSubito = acquistiTot * pctUp;
-      const diffNuovi = acquistiTot * pctDf;
-      const t = idx + 3; if (t < months.length){ deferredDue[months[t].key] += diffNuovi; }
-      const pagDiffScaduti = deferredDue[key] || 0;
-
-      const fixed = fixedCosts[key] || 0;
-      const initD = initDebt[key] || 0;
-      const costiForn = pagSubito + pagDiffScaduti;
-      const uscite = fixed + initD + costiForn;
-      const saldo = inc - uscite;
-      cum += saldo;
-
-      rows.push({ key,label, revenue:fat, incassi:inc, costiVar, usoMag, acquistiNec, extraMin, pagSubito, pagDiffScaduti, diffNuovi, fixed, initDebt:initD, costiForn, uscite, saldo, cum, magFinale:inventory });
-    });
-
-    return rows;
-  }, [months, revenue, fixedCosts, initDebt, extraReceipts, collectionLag, monthlyInventoryUse, initialInventory, initialCash, costVarPct, minPurchase, minPurchaseMonthsText, upfrontBefore, deferredBefore, upfrontAfter, deferredAfter, termsCutoff]);
-
-  const totals2026 = useMemo(()=>{
-    const rows = results.filter(r=> r.label.endsWith('-26'));
-    const sum = (k: keyof Row) => rows.reduce((a,b)=> a + (b[k] as number), 0);
-    return { incassi:sum('incassi'), fissi:sum('fixed'), debitoInit:sum('initDebt'), costiForn:sum('costiForn'), uscite:sum('uscite'), saldo:sum('saldo') };
-  }, [results]);
-
-  const csvHref = useMemo(()=>{
-    const head = ['Mese','Esito','Incassi','Costi fissi','Debito iniziale','Costi fornitori','Uscite','Saldo netto','Cumulato'].join(',');
-    const body = results.map(r => [r.label,(r.saldo>=0?'OK':'NEG'),Math.round(r.incassi),Math.round(r.fixed),Math.round(r.initDebt),Math.round(r.costiForn),Math.round(r.uscite),Math.round(r.saldo),Math.round(r.cum)].join(',')).join('\n');
-    const csv = head + '\n' + body;
-    return 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-  }, [results]);
-
-  useEffect(()=>{
-    console.assert(months.length === 16, 'Attesi 16 mesi');
-    console.assert(csvHref.includes('%0A'), 'CSV dovrebbe contenere newline codificato');
-  }, [months, csvHref]);
-
-  const setRevenueMonth = (key:string, val:number)=> setRevenue(p=> ({...p, [key]: val}));
-  const setFixedMonth = (key:string, val:number)=> setFixedCosts(p=> ({...p, [key]: val}));
-  const setDebtMonth = (key:string, val:number)=> setInitDebt(p=> ({...p, [key]: val}));
-
-  const resetDefaults = ()=>{
-    setInitialCash(5000); setMargin(35); setInitialInventory(70000); setMonthlyInventoryUse(7000);
-    setMinPurchase(5000); setMinPurchaseMonthsText('Set-25, Ott-25');
-    setTermsCutoff('2025-12'); setUpfrontBefore(60); setDeferredBefore(40); setUpfrontAfter(10); setDeferredAfter(90); setCollectionLag(1);
-    const r: Record<string,number> = {}; months.forEach(({key})=> r[key]=120000); r[toKey(2025,9)]=20000; r[toKey(2025,10)]=20000; setRevenue(r);
-    const c: Record<string,number> = {}; months.forEach(({key})=> c[key]=25000); c[toKey(2025,9)]=12000; c[toKey(2025,10)]=12000; c[toKey(2025,11)]=17000; c[toKey(2025,12)]=17000; setFixedCosts(c);
-    const d: Record<string,number> = {}; months.forEach(({key})=> d[key]=0); d[toKey(2025,9)]=13000; d[toKey(2025,10)]=13000; d[toKey(2025,11)]=13000; d[toKey(2025,12)]=13000; d[toKey(2026,1)]=13000; setInitDebt(d);
-    setExtraReceipts({ [toKey(2025,9)]: 5000 });
-  };
-
+function App() {
   return (
-    <div className="p-6 max-w-[1200px] mx-auto space-y-6">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Webapp Prospetto di Cassa (Set 2025 - Dic 2026)</h1>
-        <div className="flex gap-2">
-          <a href={csvHref} download="prospetto_cassa.csv" className="px-3 py-2 rounded-xl border shadow hover:shadow-md">CSV</a>
-          <button onClick={resetDefaults} className="px-3 py-2 rounded-xl border shadow hover:shadow-md">Reset</button>
-        </div>
-      </header>
-
-      <section className="space-y-4">
-        <div className="rounded-2xl shadow bg-white p-4">
-          <h3 className="font-semibold mb-2">Totale 2026</h3>
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-2 text-sm">
-            <Stat label="Incassi" value={totals2026.incassi} />
-            <Stat label="Costi fissi" value={totals2026.fissi} />
-            <Stat label="Debito iniziale" value={totals2026.debitoInit} />
-            <Stat label="Costi fornitori" value={totals2026.costiForn} />
-            <Stat label="Uscite" value={totals2026.uscite} />
-            <Stat label="Saldo" value={totals2026.saldo} positive={totals2026.saldo>=0} />
-          </div>
-        </div>
-
-        <div className="rounded-2xl shadow bg-white overflow-hidden">
-          <div className="p-4 border-b flex items-center justify-between">
-            <h2 className="font-semibold text-lg">Prospetto di cassa (vista concisa)</h2>
-            <div className="text-sm text-gray-600">Cumulato iniziale: <b>{eur(initialCash)}</b></div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 text-left">
-                  <th className="px-3 py-2">Mese</th>
-                  <th className="px-3 py-2">Esito</th>
-                  <th className="px-3 py-2">Incassi</th>
-                  <th className="px-3 py-2">Costi fissi</th>
-                  <th className="px-3 py-2">Debito iniziale</th>
-                  <th className="px-3 py-2">Costi fornitori</th>
-                  <th className="px-3 py-2">Uscite</th>
-                  <th className="px-3 py-2">Saldo</th>
-                  <th className="px-3 py-2">Cumulato</th>
-                </tr>
-              </thead>
-              <tbody>
-                {months.map((m, i) => {
-                  const r = results[i];
-                  const neg = r.saldo < 0; const cumNeg = r.cum < 0;
-                  return (
-                    <tr key={r.key} className="border-t">
-                      <td className="px-3 py-2 font-medium">{r.label}</td>
-                      <td className="px-3 py-2">{r.saldo>=0 ? <span className="text-green-600">🟢</span> : <span className="text-red-600">🔴</span>}</td>
-                      <td className="px-3 py-2">{eur(r.incassi)}</td>
-                      <td className="px-3 py-2">{eur(r.fixed)}</td>
-                      <td className="px-3 py-2">{eur(r.initDebt)}</td>
-                      <td className="px-3 py-2">{eur(r.costiForn)}</td>
-                      <td className="px-3 py-2">{eur(r.uscite)}</td>
-                      <td className={"px-3 py-2 " + (neg?"bg-red-50 text-red-700":"bg-green-50 text-green-700")}>{eur(r.saldo)}</td>
-                      <td className={"px-3 py-2 " + (cumNeg?"bg-amber-50 text-amber-700":"bg-cyan-50 text-cyan-700")}>{eur(r.cum)}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <section className="grid md:grid-cols-2 gap-4">
-        <div className="p-4 rounded-2xl shadow bg-white space-y-3">
-          <h2 className="font-semibold text-lg">Parametri economici</h2>
-          <div className="grid grid-cols-2 gap-3">
-            <label className="flex flex-col text-sm">Cassa iniziale
-              <input type="number" value={initialCash} onChange={e=>setInitialCash(Number(e.target.value)||0)} className="mt-1 border rounded px-3 py-2" />
-            </label>
-            <label className="flex flex-col text-sm">Margine (%)
-              <input type="number" value={margin} onChange={e=>setMargin(Number(e.target.value)||0)} className="mt-1 border rounded px-3 py-2" />
-            </label>
-            <div className="col-span-2 text-xs text-gray-600">Costi variabili: <b>{(100 - margin).toFixed(0)}%</b> del fatturato</div>
-          </div>
-          <div className="grid grid-cols-3 gap-3 pt-2">
-            <label className="flex flex-col text-sm">Magazzino iniziale
-              <input type="number" value={initialInventory} onChange={e=>setInitialInventory(Number(e.target.value)||0)} className="mt-1 border rounded px-3 py-2" />
-            </label>
-            <label className="flex flex-col text-sm">Consumo magazzino (€/mese)
-              <input type="number" value={monthlyInventoryUse} onChange={e=>setMonthlyInventoryUse(Number(e.target.value)||0)} className="mt-1 border rounded px-3 py-2" />
-            </label>
-            <label className="flex flex-col text-sm">Lag incassi (mesi)
-              <input type="number" value={collectionLag} onChange={e=>setCollectionLag(Math.max(0, Number(e.target.value)||0))} className="mt-1 border rounded px-3 py-2" />
-            </label>
-          </div>
-        </div>
-
-        <div className="p-4 rounded-2xl shadow bg-white space-y-3">
-          <h2 className="font-semibold text-lg">Fornitori & acquisti</h2>
-          <div className="grid grid-cols-2 gap-3">
-            <label className="flex flex-col text-sm">Acquisto minimo (€/mese)
-              <input type="number" value={minPurchase} onChange={e=>setMinPurchase(Number(e.target.value)||0)} className="mt-1 border rounded px-3 py-2" />
-            </label>
-            <label className="flex flex-col text-sm">Mesi con minimo (es. "Set-25, Ott-25")
-              <input type="text" value={minPurchaseMonthsText} onChange={e=>setMinPurchaseMonthsText(e.target.value)} className="mt-1 border rounded px-3 py-2" />
-            </label>
-          </div>
-          <div className="grid grid-cols-4 gap-3 pt-2 text-sm">
-            <div className="col-span-4 font-medium">Condizioni pagamento fornitori</div>
-            <label className="flex flex-col">Cutoff regime 1 (ISO)
-              <input type="text" value={termsCutoff} onChange={e=>setTermsCutoff(e.target.value)} className="mt-1 border rounded px-3 py-2" />
-              <span className="text-xs text-gray-500">Fino a questa data inclusa: regime 1</span>
-            </label>
-            <label className="flex flex-col">Regime 1 subito (%)
-              <input type="number" value={upfrontBefore} onChange={e=>setUpfrontBefore(Number(e.target.value)||0)} className="mt-1 border rounded px-3 py-2" />
-            </label>
-            <label className="flex flex-col">Regime 1 differito (%)
-              <input type="number" value={deferredBefore} onChange={e=>setDeferredBefore(Number(e.target.value)||0)} className="mt-1 border rounded px-3 py-2" />
-            </label>
-            <div></div>
-            <label className="flex flex-col">Regime 2 subito (%)
-              <input type="number" value={upfrontAfter} onChange={e=>setUpfrontAfter(Number(e.target.value)||0)} className="mt-1 border rounded px-3 py-2" />
-            </label>
-            <label className="flex flex-col">Regime 2 differito (%)
-              <input type="number" value={deferredAfter} onChange={e=>setDeferredAfter(Number(e.target.value)||0)} className="mt-1 border rounded px-3 py-2" />
-            </label>
-          </div>
-        </div>
-      </section>
-
-      <section className="p-4 rounded-2xl shadow bg-white space-y-3">
-        <h2 className="font-semibold text-lg">Editor mensile (Fatturato · Costi fissi · Debito iniziale)</h2>
-        <div className="grid grid-cols-4 md:grid-cols-8 gap-3 text-sm">
-          {months.map(({key,label})=> (
-            <div key={key} className="p-3 rounded-xl border">
-              <div className="font-medium mb-2">{label}</div>
-              <label className="flex flex-col">Fatturato
-                <input type="number" value={revenue[key]||0} onChange={e=>setRevenueMonth(key, Number(e.target.value)||0)} className="mt-1 border rounded px-2 py-1" />
-              </label>
-              <label className="flex flex-col mt-2">Costi fissi
-                <input type="number" value={fixedCosts[key]||0} onChange={e=>setFixedMonth(key, Number(e.target.value)||0)} className="mt-1 border rounded px-2 py-1" />
-              </label>
-              <label className="flex flex-col mt-2">Debito iniziale
-                <input type="number" value={initDebt[key]||0} onChange={e=>setDebtMonth(key, Number(e.target.value)||0)} className="mt-1 border rounded px-2 py-1" />
-              </label>
+    <main className="min-h-screen bg-slate-950 text-white">
+      <section className="relative overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.32),_transparent_32%),radial-gradient(circle_at_80%_20%,_rgba(99,102,241,0.28),_transparent_30%)]" />
+        <div className="relative mx-auto flex max-w-7xl flex-col px-6 py-8 lg:px-8">
+          <nav className="flex items-center justify-between rounded-full border border-white/10 bg-white/5 px-5 py-3 backdrop-blur">
+            <a href="#top" className="text-sm font-semibold tracking-[0.28em] text-cyan-200">
+              DBSG SRL
+            </a>
+            <div className="hidden items-center gap-8 text-sm text-slate-200 md:flex">
+              <a className="transition hover:text-cyan-200" href="#servizi">Servizi</a>
+              <a className="transition hover:text-cyan-200" href="#metodo">Metodo</a>
+              <a className="transition hover:text-cyan-200" href="#contatti">Contatti</a>
             </div>
-          ))}
+            <a
+              className="rounded-full bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:bg-white"
+              href="mailto:info@differentbusinessservicegroup.it"
+            >
+              Scrivici
+            </a>
+          </nav>
+
+          <div id="top" className="grid items-center gap-12 py-20 lg:grid-cols-[1.05fr_0.95fr] lg:py-28">
+            <div>
+              <p className="mb-5 inline-flex rounded-full border border-cyan-200/30 bg-cyan-300/10 px-4 py-2 text-sm font-medium text-cyan-100">
+                Consulenza, servizi e soluzioni per imprese moderne
+              </p>
+              <h1 className="max-w-4xl text-4xl font-black leading-tight tracking-tight sm:text-6xl">
+                Different Business Service Group SRL
+              </h1>
+              <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">
+                Aiutiamo aziende, imprenditori e professionisti a semplificare la gestione quotidiana, migliorare i processi e trasformare le idee in piani concreti.
+              </p>
+              <div className="mt-9 flex flex-col gap-4 sm:flex-row">
+                <a
+                  className="rounded-full bg-white px-7 py-4 text-center font-bold text-slate-950 shadow-xl shadow-white/10 transition hover:-translate-y-0.5 hover:bg-cyan-200"
+                  href="#contatti"
+                >
+                  Richiedi una consulenza
+                </a>
+                <a
+                  className="rounded-full border border-white/20 px-7 py-4 text-center font-bold text-white transition hover:-translate-y-0.5 hover:border-cyan-200 hover:text-cyan-100"
+                  href="#servizi"
+                >
+                  Scopri i servizi
+                </a>
+              </div>
+            </div>
+
+            <div className="rounded-[2rem] border border-white/10 bg-white/10 p-6 shadow-2xl shadow-black/30 backdrop-blur">
+              <div className="rounded-[1.5rem] bg-slate-900/80 p-6">
+                <p className="text-sm font-semibold uppercase tracking-[0.24em] text-cyan-200">Business partner</p>
+                <h2 className="mt-4 text-2xl font-bold">Un unico interlocutore per far crescere il tuo business.</h2>
+                <p className="mt-4 leading-7 text-slate-300">
+                  Dalla pianificazione alla gestione operativa: mettiamo metodo, organizzazione e competenze al servizio dei tuoi obiettivi.
+                </p>
+                <div className="mt-8 grid gap-4 sm:grid-cols-3">
+                  {stats.map((stat) => (
+                    <div key={stat.label} className="rounded-2xl bg-white/8 p-4 ring-1 ring-white/10">
+                      <p className="text-3xl font-black text-cyan-200">{stat.value}</p>
+                      <p className="mt-2 text-sm text-slate-300">{stat.label}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
-      <p className="text-xs text-gray-500">Regole: Costi variabili = Fatturato x {(100 - margin).toFixed(0)}%. Consumo magazzino fisso mensile fino a esaurimento. Acquisto minimo nei mesi indicati (l'extra va a magazzino). Fornitori: regime 1 fino a {termsCutoff} (subito {upfrontBefore}% / differito {deferredBefore}%), poi regime 2 (subito {upfrontAfter}% / differito {deferredAfter}%). Differiti a 90gg. Incassi = fatturato con lag di {collectionLag} mese/i + extra.</p>
-    </div>
-  );
-}
+      <section id="servizi" className="bg-white px-6 py-20 text-slate-950 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+          <div className="max-w-3xl">
+            <p className="font-semibold uppercase tracking-[0.24em] text-cyan-700">Cosa facciamo</p>
+            <h2 className="mt-4 text-3xl font-black tracking-tight sm:text-5xl">Servizi pensati per creare ordine, velocità e valore.</h2>
+            <p className="mt-5 text-lg leading-8 text-slate-600">
+              Ogni progetto parte da un confronto diretto e si traduce in azioni pratiche, strumenti chiari e responsabilità definite.
+            </p>
+          </div>
+          <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+            {services.map((service) => (
+              <article key={service.title} className="rounded-3xl border border-slate-200 bg-slate-50 p-6 transition hover:-translate-y-1 hover:border-cyan-300 hover:shadow-xl">
+                <div className="mb-5 h-12 w-12 rounded-2xl bg-cyan-100 text-center text-2xl leading-[3rem]">✓</div>
+                <h3 className="text-xl font-bold">{service.title}</h3>
+                <p className="mt-4 leading-7 text-slate-600">{service.text}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
 
-function Stat({label, value, positive}:{label:string; value:number; positive?:boolean}){
-  return (
-    <div className={'p-3 rounded-xl border ' + (positive===undefined?'': (positive?'bg-green-50 text-green-700':'bg-red-50 text-red-700'))}>
-      <div className="text-xs text-gray-500">{label}</div>
-      <div className="font-semibold">{eur(value)}</div>
-    </div>
+      <section id="metodo" className="px-6 py-20 lg:px-8">
+        <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[0.9fr_1.1fr]">
+          <div>
+            <p className="font-semibold uppercase tracking-[0.24em] text-cyan-200">Il nostro metodo</p>
+            <h2 className="mt-4 text-3xl font-black tracking-tight sm:text-5xl">Dal problema alla soluzione, con un percorso trasparente.</h2>
+            <p className="mt-5 text-lg leading-8 text-slate-300">
+              Lavoriamo con pragmatismo: poche promesse generiche, molte attività tracciabili e un dialogo costante con il cliente.
+            </p>
+          </div>
+          <ol className="space-y-4">
+            {steps.map((step, index) => (
+              <li key={step} className="flex gap-5 rounded-3xl border border-white/10 bg-white/8 p-5">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-cyan-300 font-black text-slate-950">{index + 1}</span>
+                <p className="pt-2 text-lg text-slate-200">{step}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      <section id="contatti" className="bg-slate-100 px-6 py-20 text-slate-950 lg:px-8">
+        <div className="mx-auto grid max-w-7xl gap-10 rounded-[2rem] bg-white p-8 shadow-2xl md:grid-cols-[1fr_0.9fr] lg:p-12">
+          <div>
+            <p className="font-semibold uppercase tracking-[0.24em] text-cyan-700">Contatti</p>
+            <h2 className="mt-4 text-3xl font-black tracking-tight sm:text-5xl">Parliamo del tuo prossimo obiettivo.</h2>
+            <p className="mt-5 text-lg leading-8 text-slate-600">
+              Raccontaci di cosa hai bisogno: ti ricontatteremo per capire il contesto, valutare le priorità e proporre il percorso più adatto.
+            </p>
+          </div>
+          <div className="rounded-3xl bg-slate-950 p-6 text-white">
+            <p className="text-sm uppercase tracking-[0.24em] text-cyan-200">Different Business Service Group SRL</p>
+            <div className="mt-6 space-y-4 text-slate-200">
+              <p><span className="font-semibold text-white">Email:</span> info@differentbusinessservicegroup.it</p>
+              <p><span className="font-semibold text-white">Telefono:</span> +39 000 000 0000</p>
+              <p><span className="font-semibold text-white">Sede:</span> Italia</p>
+            </div>
+            <a
+              className="mt-8 inline-flex w-full justify-center rounded-full bg-cyan-300 px-6 py-4 font-bold text-slate-950 transition hover:bg-white"
+              href="mailto:info@differentbusinessservicegroup.it?subject=Richiesta%20informazioni%20DBSG%20SRL"
+            >
+              Invia una richiesta
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
   )
 }
+
+export default App
